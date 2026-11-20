@@ -718,6 +718,7 @@ pub fn run() {
             clip_url::clip_url,
             web_browser::open_web_browser,
             browser_fetch::fetch_web_browser_resource,
+            browser_fetch::download_catalog_book,
             media_proxy::get_media_proxy_base,
             media_proxy::get_media_file_url,
             web_browser::set_web_browser_status,

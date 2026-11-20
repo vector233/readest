@@ -3,7 +3,6 @@ use base64::Engine;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue, COOKIE, LOCATION, SET_COOKIE};
 use serde::Serialize;
 use std::collections::HashMap;
-#[cfg(mobile)]
 use tauri::Manager;
 use tauri::Url;
 
@@ -220,10 +219,67 @@ pub async fn fetch_web_browser_resource<R: tauri::Runtime>(
     .await
 }
 
-async fn fetch_resource<F, Fut>(
+async fn browser_response<F, Fut>(
     client: &reqwest::Client,
     mut target: Url,
     mut request_headers: HeaderMap,
+    exchange: F,
+) -> Result<(Url, reqwest::Response), String>
+where
+    F: Fn(Url, Vec<String>) -> Fut,
+    Fut: std::future::Future<Output = Result<String, String>>,
+{
+    for _ in 0..10 {
+        let cookies = exchange(target.clone(), vec![]).await?;
+        let mut request = client.get(target.clone()).headers(request_headers.clone());
+        if !cookies.is_empty() {
+            request = request.header(COOKIE, cookies);
+        }
+        let response = request
+            .send()
+            .await
+            .map_err(|e| e.without_url().to_string())?;
+        let updated = response
+            .headers()
+            .get_all(SET_COOKIE)
+            .iter()
+            .filter_map(|v| v.to_str().ok())
+            .filter(|value| valid_response_cookie(value, &target))
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        if !updated.is_empty() {
+            exchange(target.clone(), updated).await?;
+        }
+        if matches!(response.status().as_u16(), 301 | 302 | 303 | 307 | 308) {
+            let location = response
+                .headers()
+                .get(LOCATION)
+                .and_then(|v| v.to_str().ok())
+                .ok_or("Missing redirect URL")?;
+            let next = resource_url(
+                target
+                    .join(location)
+                    .map_err(|_| "Invalid redirect URL")?
+                    .as_str(),
+            )?;
+            if target.scheme() == "https" && next.scheme() != "https" {
+                return Err("Insecure redirect".into());
+            }
+            if next.origin() != target.origin() {
+                request_headers.remove("referer");
+            }
+            target = next;
+            continue;
+        }
+        return Ok((target, response));
+    }
+    Err("Too many redirects".into())
+}
+
+async fn fetch_resource<F, Fut>(
+    client: &reqwest::Client,
+    target: Url,
+    request_headers: HeaderMap,
     exchange: F,
 ) -> Result<BrowserResource, String>
 where
@@ -231,83 +287,149 @@ where
     Fut: std::future::Future<Output = Result<String, String>>,
 {
     tokio::time::timeout(std::time::Duration::from_secs(15), async {
-        for _ in 0..10 {
-            let cookies = exchange(target.clone(), vec![]).await?;
-            let mut request = client.get(target.clone()).headers(request_headers.clone());
-            if !cookies.is_empty() {
-                request = request.header(COOKIE, cookies);
-            }
-            let mut response = request
-                .send()
-                .await
-                .map_err(|e| e.without_url().to_string())?;
-            let updated = response
-                .headers()
-                .get_all(SET_COOKIE)
-                .iter()
-                .filter_map(|v| v.to_str().ok())
-                .filter(|value| valid_response_cookie(value, &target))
-                .map(str::to_string)
-                .collect::<Vec<_>>();
-            if !updated.is_empty() {
-                exchange(target.clone(), updated).await?;
-            }
-            if matches!(response.status().as_u16(), 301 | 302 | 303 | 307 | 308) {
-                let location = response
-                    .headers()
-                    .get(LOCATION)
-                    .and_then(|v| v.to_str().ok())
-                    .ok_or("Missing redirect URL")?;
-                let next = resource_url(
-                    target
-                        .join(location)
-                        .map_err(|_| "Invalid redirect URL")?
-                        .as_str(),
-                )?;
-                if target.scheme() == "https" && next.scheme() != "https" {
-                    return Err("Insecure redirect".into());
-                }
-                if next.origin() != target.origin() {
-                    request_headers.remove("referer");
-                }
-                target = next;
-                continue;
-            }
-            let status = response.status().as_u16();
-            let content_type = response
-                .headers()
-                .get("content-type")
-                .and_then(|h| h.to_str().ok())
-                .unwrap_or("application/octet-stream")
-                .to_string();
-            if response
-                .content_length()
-                .is_some_and(|len| len > MAX_BYTES as u64)
-            {
+        let (target, mut response) =
+            browser_response(client, target, request_headers, exchange).await?;
+        let status = response.status().as_u16();
+        let content_type = response
+            .headers()
+            .get("content-type")
+            .and_then(|h| h.to_str().ok())
+            .unwrap_or("application/octet-stream")
+            .to_string();
+        if response
+            .content_length()
+            .is_some_and(|len| len > MAX_BYTES as u64)
+        {
+            return Err("Resource is too large".into());
+        }
+        let mut bytes = Vec::new();
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|e| e.without_url().to_string())?
+        {
+            if bytes.len() + chunk.len() > MAX_BYTES {
                 return Err("Resource is too large".into());
             }
-            let mut bytes = Vec::new();
-            while let Some(chunk) = response
-                .chunk()
-                .await
-                .map_err(|e| e.without_url().to_string())?
-            {
-                if bytes.len() + chunk.len() > MAX_BYTES {
-                    return Err("Resource is too large".into());
-                }
-                bytes.extend_from_slice(&chunk);
-            }
-            return Ok(BrowserResource {
-                url: target.to_string(),
-                status,
-                content_type,
-                body: base64::engine::general_purpose::STANDARD.encode(bytes),
-            });
+            bytes.extend_from_slice(&chunk);
         }
-        Err("Too many redirects".into())
+        Ok(BrowserResource {
+            url: target.to_string(),
+            status,
+            content_type,
+            body: base64::engine::general_purpose::STANDARD.encode(bytes),
+        })
     })
     .await
     .map_err(|_| "Request timed out".to_string())?
+}
+
+/// Stream one selected edition to the app cache, using the same origin-scoped
+/// browser cookies and redirect checks as catalog HTML. No file bytes cross IPC.
+#[tauri::command]
+pub async fn download_catalog_book<R: tauri::Runtime>(
+    webview: tauri::Webview<R>,
+    url: String,
+    format: String,
+    user_agent: String,
+) -> Result<Option<String>, String> {
+    use tokio::io::AsyncWriteExt;
+    let target = resource_url(&url)?;
+    if target.origin().ascii_serialization() != "https://zh.z-library.sk"
+        || !target.path().starts_with("/dl/")
+        || !matches!(
+            format.as_str(),
+            "epub" | "pdf" | "azw3" | "mobi" | "fb2" | "txt"
+        )
+    {
+        return Err("Invalid catalog download".into());
+    }
+    let directory = webview
+        .app_handle()
+        .path()
+        .app_cache_dir()
+        .map_err(|e| e.to_string())?;
+    tokio::fs::create_dir_all(&directory)
+        .await
+        .map_err(|e| e.to_string())?;
+    let path = directory.join(format!("catalog-{}.{}", uuid::Uuid::new_v4(), format));
+    let client = reqwest::Client::builder()
+        .user_agent(user_agent)
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|e| e.to_string())?;
+    let result = tokio::time::timeout(std::time::Duration::from_secs(600), async {
+        let (_, mut response) =
+            browser_response(&client, target, HeaderMap::new(), |url, updates| {
+                browser_cookies(webview.clone(), url, updates)
+            })
+            .await?;
+        if matches!(response.status().as_u16(), 404 | 410) {
+            return Ok(None);
+        }
+        if !response.status().is_success() {
+            return Err(format!("Catalog HTTP {}", response.status().as_u16()));
+        }
+        let mime = response
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        if mime.contains("html") || mime.contains("json") {
+            return Err("Catalog returned a page instead of a book".into());
+        }
+        let mut output = tokio::fs::File::create_new(&path)
+            .await
+            .map_err(|e| e.to_string())?;
+        let mut prefix: Vec<u8> = Vec::with_capacity(512);
+        let mut total: u64 = 0;
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|e| e.without_url().to_string())?
+        {
+            total += chunk.len() as u64;
+            if total > 1024 * 1024 * 1024 {
+                return Err("Book exceeds device transfer limit".into());
+            }
+            let count = (512 - prefix.len()).min(chunk.len());
+            prefix.extend_from_slice(&chunk[..count]);
+            output.write_all(&chunk).await.map_err(|e| e.to_string())?;
+        }
+        if !book_signature_matches(&format, &prefix) {
+            return Err("Catalog returned an unexpected file".into());
+        }
+        output.flush().await.map_err(|e| e.to_string())?;
+        Ok(Some(path.to_string_lossy().into_owned()))
+    })
+    .await
+    .unwrap_or_else(|_| Err("Catalog download timed out".into()));
+    if !matches!(&result, Ok(Some(_))) {
+        let _ = tokio::fs::remove_file(&path).await;
+    }
+    result
+}
+
+fn book_signature_matches(format: &str, prefix: &[u8]) -> bool {
+    if prefix.is_empty() {
+        return false;
+    }
+    let text = String::from_utf8_lossy(prefix)
+        .trim_start_matches('\u{feff}')
+        .trim_start()
+        .to_ascii_lowercase();
+    if text.starts_with("<!doctype html") || text.starts_with("<html") {
+        return false;
+    }
+    match format {
+        "epub" => prefix.starts_with(b"PK\x03\x04"),
+        "pdf" => prefix.windows(5).any(|v| v == b"%PDF-"),
+        "azw3" | "mobi" => prefix.get(60..68) == Some(b"BOOKMOBI"),
+        "fb2" => text.starts_with("<?xml") || text.starts_with("<fictionbook"),
+        "txt" => !prefix.contains(&0),
+        _ => false,
+    }
 }
 
 #[cfg(test)]

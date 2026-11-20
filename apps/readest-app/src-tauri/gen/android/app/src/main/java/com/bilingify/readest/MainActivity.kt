@@ -270,8 +270,34 @@ class MainActivity : TauriActivity(), KeyDownInterceptor {
         return super.onKeyDown(keyCode, event)
     }
 
+    // A private APK can contain an optional, locally supplied catalog snapshot.
+    private fun installBundledShelf() {
+        val snapshot = android.util.AtomicFile(java.io.File(filesDir, "personal-shelf.json"))
+        val installedAt = packageManager.getPackageInfo(packageName, 0).lastUpdateTime
+        val prefs = getSharedPreferences("bookDiscovery", MODE_PRIVATE)
+        if (prefs.getLong("shelfApk", 0L) == installedAt) return
+        try {
+            assets.open("personal-shelf.json").use { input ->
+                val output = snapshot.startWrite()
+                try {
+                    input.copyTo(output)
+                    snapshot.finishWrite(output)
+                } catch (error: java.io.IOException) {
+                    snapshot.failWrite(output)
+                    throw error
+                }
+            }
+            prefs.edit().putLong("shelfApk", installedAt).apply()
+        } catch (_: java.io.FileNotFoundException) {
+            // The public build ships without a personal shelf.
+        } catch (_: java.io.IOException) {
+            // Retry on the next launch. AtomicFile preserves the last good copy.
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
+        installBundledShelf()
         super.onCreate(savedInstanceState)
 
         handleIncomingIntent(intent)

@@ -125,6 +125,7 @@ import FailedImportsDialog, { FailedImport } from './components/FailedImportsDia
 import ImportFromFolderDialog, {
   ImportFromFolderResult,
 } from './components/ImportFromFolderDialog';
+import BookDiscoveryDialog from './components/BookDiscoveryDialog';
 import WebSourcesDialog from './components/WebSourcesDialog';
 import ImportNovelDialog from './components/ImportNovelDialog';
 import ImportPastedTextDialog from './components/ImportPastedTextDialog';
@@ -275,6 +276,7 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
   );
   const [showFeeds, setShowFeeds] = useState(false);
   const [showAddFeed, setShowAddFeed] = useState(false);
+  const [showDiscovery, setShowDiscovery] = useState(false);
   const [showWebSources, setShowWebSources] = useState(false);
   const [showImportNovel, setShowImportNovel] = useState(false);
   const [showImportPastedText, setShowImportPastedText] = useState(false);
@@ -2006,6 +2008,7 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
           onImportBookFromNovelUrl={
             isTauriAppPlatform() ? () => setShowImportNovel(true) : undefined
           }
+          onOpenDiscovery={appService?.isAndroidApp ? () => setShowDiscovery(true) : undefined}
           onOpenCatalogManager={handleShowOPDSDialog}
           onOpenFeeds={handleShowFeeds}
           onToggleSelectMode={() => handleSetSelectMode(!isSelectMode)}
@@ -2142,6 +2145,7 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
           onImportBookFromNovelUrl={
             isTauriAppPlatform() ? () => setShowImportNovel(true) : undefined
           }
+          onOpenDiscovery={appService?.isAndroidApp ? () => setShowDiscovery(true) : undefined}
           onOpenCatalogManager={handleShowOPDSDialog}
           onOpenFeeds={handleShowFeeds}
         />
@@ -2245,6 +2249,9 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
             void runFolderImport(result);
           }}
         />
+      )}
+      {showDiscovery && (
+        <BookDiscoveryDialog onClose={() => setShowDiscovery(false)} onClip={handleClipWebPage} />
       )}
       <WebSourcesDialog
         isOpen={showWebSources}

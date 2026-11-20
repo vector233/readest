@@ -15,6 +15,7 @@ export interface ImportMenuProps {
   onImportBooksFromDirectory?: () => void;
   onImportFromWebBrowser?: () => void;
   onImportBookFromNovelUrl?: () => void;
+  onOpenDiscovery?: () => void;
   onOpenCatalogManager: () => void;
   onOpenFeeds: () => void;
 }
@@ -27,6 +28,7 @@ const ImportMenu: React.FC<ImportMenuProps> = ({
   onImportBooksFromDirectory,
   onImportFromWebBrowser,
   onImportBookFromNovelUrl,
+  onOpenDiscovery,
   onOpenCatalogManager,
   onOpenFeeds,
 }) => {
@@ -96,6 +98,16 @@ const ImportMenu: React.FC<ImportMenuProps> = ({
         />
       )}
       <hr aria-hidden='true' className='border-base-200 my-1' />
+      {onOpenDiscovery && (
+        <MenuItem
+          label={_('Book discovery')}
+          Icon={<MdMenuBook className='h-5 w-5' />}
+          onClick={() => {
+            onOpenDiscovery();
+            setIsDropdownOpen?.(false);
+          }}
+        />
+      )}
       {onImportFromWebBrowser && (
         <MenuItem
           label={_('From Web Browser')}
