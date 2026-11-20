@@ -11,6 +11,8 @@ import { getWebBrowserOptions } from '@/services/webBrowser/webBrowserOptions';
 import {
   CATALOG_ORIGIN,
   decodeShelf,
+  decodeCatalogBooks,
+  editionPreference,
   sameBook,
   searchUrl,
   type CatalogBook,
@@ -75,7 +77,14 @@ export default function BookDiscoveryDialog({ onClose, onClip }: Props) {
     mounted.current = true;
     void readTextFile('files/personal-shelf.json', { baseDir: BaseDirectory.AppData })
       .then((raw) => {
-        if (mounted.current) setShelf(decodeShelf(JSON.parse(raw)));
+        if (!mounted.current) return;
+        const seed = JSON.parse(raw);
+        const owned = decodeShelf(seed);
+        setShelf(owned);
+        const initialPopular = decodeCatalogBooks(seed.popular).filter(
+          (b) => !owned.some((s) => sameBook(s, b)),
+        );
+        if (initialPopular.length) setPopular(initialPopular.slice(0, 30));
       })
       .catch(() => {
         if (mounted.current) setTab('search');
@@ -162,7 +171,10 @@ export default function BookDiscoveryDialog({ onClose, onClip }: Props) {
     setMessage('');
     setCurrent('');
     try {
-      await syncShelf(books, {
+      const ready = (book: ShelfBook) => shelfStatus(book, records.current[book.id]) === 'ready';
+      // Import the verified editions first, even if later searches need the site to be unlocked.
+      const ordered = [...books.filter(ready), ...books.filter((b) => !ready(b))];
+      await syncShelf(ordered, {
         read: (id) => records.current[id],
         save,
         existing: (book, hash) =>
@@ -174,7 +186,7 @@ export default function BookDiscoveryDialog({ onClose, onClip }: Props) {
                 (b.hash === hash || sameBook(book, b)) &&
                 (b.downloadedAt || b.filePath),
             )?.hash,
-        search: (book) => searchCatalog(book.title),
+        search: (query) => searchCatalog(query),
         add: async (edition) => {
           const path = await downloadEdition(edition);
           if (!path) return;
@@ -182,6 +194,9 @@ export default function BookDiscoveryDialog({ onClose, onClip }: Props) {
             const library = useLibraryStore.getState();
             const book = await appService.importBook(path, library.library);
             if (!book) throw new Error('Import failed');
+            if (!book.title || /^catalog-[0-9a-f-]{36}(?:\.\w+)?$/i.test(book.title))
+              book.title = edition.title;
+            if (!book.author) book.author = edition.author;
             await library.updateBooks(envConfig, [book]);
             return book.hash;
           } finally {
@@ -427,6 +442,10 @@ export default function BookDiscoveryDialog({ onClose, onClip }: Props) {
                               <>
                                 <p className='text-sm'>{_('Select an edition to import')}</p>
                                 {remoteList(matches, (choice) => {
+                                  if (!editionPreference.includes(choice.format)) {
+                                    void browse(choice.url);
+                                    return;
+                                  }
                                   save(b.id, { ...row, selected: choice, manual: false });
                                   void start([b]);
                                 })}

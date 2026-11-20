@@ -15,6 +15,7 @@ export interface ShelfBook {
   isbn?: string;
   /** Missing until searched. An empty array means the catalog returned no books. */
   matches?: CatalogBook[];
+  isbnChecked?: boolean;
 }
 
 export function searchUrl(query: string): string {
@@ -57,6 +58,10 @@ function decodeBook(value: unknown): CatalogBook | undefined {
   };
 }
 
+export function decodeCatalogBooks(input: unknown): CatalogBook[] {
+  return Array.isArray(input) ? input.map(decodeBook).filter((b): b is CatalogBook => !!b) : [];
+}
+
 export function decodeShelf(input: unknown): ShelfBook[] {
   if (!record(input) || input['version'] !== 1 || !Array.isArray(input['books'])) return [];
   const seen = new Set<string>();
@@ -76,6 +81,7 @@ export function decodeShelf(input: unknown): ShelfBook[] {
       id: item['id'],
       title: item['title'].trim(),
       author: typeof item['author'] === 'string' ? item['author'].trim() : '',
+      ...(item['isbnChecked'] === true ? { isbnChecked: true } : {}),
       ...(typeof item['isbn'] === 'string' && item['isbn'] ? { isbn: item['isbn'] } : {}),
       ...(Array.isArray(item['matches'])
         ? { matches: item['matches'].map(decodeBook).filter((b): b is CatalogBook => !!b) }
@@ -157,7 +163,7 @@ export function chooseEdition(shelf: ShelfBook, choices: CatalogBook[]): Catalog
   const matches = byIsbn.length ? byIsbn : choices.filter((b) => sameBook(shelf, b));
   for (const format of editionPreference) {
     const editions = matches.filter((b) => b.format === format);
-    if (editions.length) return editions.length === 1 ? editions[0] : undefined;
+    if (editions.length) return byIsbn.length || editions.length === 1 ? editions[0] : undefined;
   }
   return undefined;
 }

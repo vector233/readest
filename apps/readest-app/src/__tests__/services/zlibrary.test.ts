@@ -44,3 +44,16 @@ describe('personal book discovery', () => {
     expect(chooseEdition({ ...shelf, author: '' }, [book])).toBeUndefined();
   });
 });
+
+it('selects one copy when two files have the same exact ISBN and format', () => {
+  const first = { ...book, isbn: '9780306406157' };
+  const second = { ...first, url: origin + '/book/2/b' };
+  expect(chooseEdition({ ...shelf, isbn: '978-0-306-40615-7' }, [first, second])).toEqual(first);
+});
+
+it('ignores the synthetic book card supplied on a real empty results page', () => {
+  const empty = '<div class="notFound color3">按照您的查询，没有找到任何信息.</div>';
+  const synthetic =
+    '<z-bookcard nofollow href="/book/synthetic"><div slot="title">Query</div></z-bookcard>';
+  expect(parseCatalog(empty + synthetic)).toEqual([]);
+});

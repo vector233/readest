@@ -5,6 +5,7 @@ export interface ShelfProgress {
   selected?: CatalogBook;
   matches?: CatalogBook[];
   manual?: boolean;
+  isbnChecked?: boolean;
 }
 
 export type SyncProgress = Record<string, ShelfProgress>;
@@ -24,7 +25,7 @@ interface SyncOptions {
   read: (id: string) => ShelfProgress | undefined;
   save: (id: string, progress: ShelfProgress) => void;
   existing: (book: ShelfBook, hash?: string) => string | undefined;
-  search: (book: ShelfBook) => Promise<CatalogBook[]>;
+  search: (query: string) => Promise<CatalogBook[]>;
   /** No available download link for this edition requires a visit to its detail page. */
   add: (book: CatalogBook) => Promise<string | undefined>;
   stopping: () => boolean;
@@ -48,11 +49,21 @@ export async function syncShelf(books: ShelfBook[], options: SyncOptions) {
     let matches = row.matches ?? book.matches;
     if (!matches && !row.selected) {
       options.current(book);
-      matches = await options.search(book);
+      matches = await options.search(book.title);
       row = { ...row, matches };
       options.save(book.id, row);
     }
-    const choice = row.selected ?? chooseEdition(book, matches ?? []);
+    let choice = row.selected ?? chooseEdition(book, matches ?? []);
+    if (!choice && book.isbn && !book.isbnChecked && !row.isbnChecked && !options.stopping()) {
+      options.current(book);
+      const editions = await options.search(book.isbn);
+      matches = [
+        ...new Map([...editions, ...(matches ?? [])].map((item) => [item.url, item])).values(),
+      ];
+      row = { ...row, isbnChecked: true, matches };
+      options.save(book.id, row);
+      choice = chooseEdition(book, matches);
+    }
     if (!choice || options.stopping()) continue;
     options.current(book);
     const hash = await options.add(choice);

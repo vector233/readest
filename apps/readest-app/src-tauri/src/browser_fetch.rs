@@ -436,6 +436,18 @@ fn book_signature_matches(format: &str, prefix: &[u8]) -> bool {
 mod tests {
     use super::*;
     #[test]
+    fn catalog_download_checks_file_signatures_and_rejects_login_pages() {
+        assert!(book_signature_matches("epub", b"PK\x03\x04test"));
+        assert!(book_signature_matches("pdf", b"%PDF-1.7"));
+        assert!(!book_signature_matches(
+            "epub",
+            b"  <!DOCTYPE html><html>Sign in"
+        ));
+        assert!(!book_signature_matches("pdf", b""));
+        assert!(!book_signature_matches("txt", b"binary\0data"));
+    }
+
+    #[test]
     fn windows_cookie_renewal_preserves_domain_scope_at_the_wry_boundary() {
         for header in [
             "session=renewed; Domain=.example.org",

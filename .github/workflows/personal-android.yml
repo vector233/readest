@@ -14,6 +14,7 @@ jobs:
     timeout-minutes: 100
     env:
       NEXT_PUBLIC_APP_PLATFORM: tauri
+      NEXT_PUBLIC_DISABLE_UPDATER: "1"
       CARGO_PROFILE_RELEASE_DEBUG: "0"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
