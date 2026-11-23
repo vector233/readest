@@ -51,8 +51,8 @@ android {
         resValue("string", "personal_app_name", "Readest 个人版")
         minSdk = 26
         targetSdk = 36
-        versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt() + 1
-        versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0") + "-personal.1"
+        versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt() + 2
+        versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0") + "-personal.2"
         val storeFlavor = project.findProperty("storeFlavor")?.toString() ?: "foss"
         missingDimensionStrategy("store", storeFlavor)
         // Handwriting (issue #3673): -PpenFlavor=booxPen links the BOOX Pen SDK

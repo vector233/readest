@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BaseDirectory, readTextFile, remove } from '@tauri-apps/plugin-fs';
 import { useRouter } from 'next/navigation';
 import Dialog from '@/components/Dialog';
@@ -14,14 +14,22 @@ import {
   decodeShelf,
   decodeCatalogBooks,
   editionPreference,
+  reviewEditions,
   sameBook,
   searchUrl,
   type CatalogBook,
   type ShelfBook,
 } from '@/services/zlibrary/catalog';
-import { searchCatalog, popularCatalog, downloadEdition } from '@/services/zlibrary/client';
+import {
+  searchCatalog,
+  searchByTitle,
+  popularCatalog,
+  downloadEdition,
+} from '@/services/zlibrary/client';
+import { workQueries } from '@/services/zlibrary/work';
 import {
   shelfStatus,
+  shelfEditions,
   syncShelf,
   type ShelfProgress,
   type ShelfStatus,
@@ -161,7 +169,7 @@ export default function BookDiscoveryDialog({ onClose, onClip }: Props) {
     try {
       const books =
         mode === 'search'
-          ? await searchCatalog(term, controller.signal)
+          ? await searchByTitle(term, controller.signal)
           : await popularCatalog(controller.signal);
       if (!controller.signal.aborted) {
         if (mode === 'popular')
@@ -175,7 +183,7 @@ export default function BookDiscoveryDialog({ onClose, onClip }: Props) {
     }
   };
 
-  const start = async (books: ShelfBook[]) => {
+  const start = async (books: ShelfBook[], refresh = false) => {
     if (!appService || busy || active.current) return;
     active.current = true;
     stop.current = false;
@@ -189,6 +197,7 @@ export default function BookDiscoveryDialog({ onClose, onClip }: Props) {
       // Import the verified editions first, even if later searches need the site to be unlocked.
       const ordered = [...books.filter(ready), ...books.filter((b) => !ready(b))];
       await syncShelf(ordered, {
+        refresh,
         read: (id) => records.current[id],
         save,
         existing: (book, hash) =>
@@ -258,14 +267,16 @@ export default function BookDiscoveryDialog({ onClose, onClip }: Props) {
       setMessage(_('Finishing the current book…'));
     } else onClose();
   };
-  const counts = shelf.reduce(
-    (sum, b) => {
-      const status = shelfStatus(b, progress[b.id]);
-      sum[status] = (sum[status] || 0) + 1;
-      return sum;
-    },
-    {} as Partial<Record<ShelfStatus, number>>,
-  );
+  const { counts, statuses } = useMemo(() => {
+    const counts: Partial<Record<ShelfStatus, number>> = {};
+    const statuses = new Map<string, ShelfStatus>();
+    for (const book of shelf) {
+      const status = shelfStatus(book, progress[book.id]);
+      statuses.set(book.id, status);
+      counts[status] = (counts[status] || 0) + 1;
+    }
+    return { counts, statuses };
+  }, [shelf, progress]);
   const catalogList = tab === 'search' ? results : popular;
   const remoteList = (items: CatalogBook[], select?: (book: CatalogBook) => void) => (
     <ul className='divide-base-200 divide-y'>
@@ -424,11 +435,11 @@ export default function BookDiscoveryDialog({ onClose, onClip }: Props) {
         {tab === 'shelf' && (
           <ul className='divide-base-200 divide-y'>
             {shelf
-              .filter((b) => filter === 'all' || shelfStatus(b, progress[b.id]) === filter)
+              .filter((b) => filter === 'all' || statuses.get(b.id) === filter)
               .map((b) => {
                 const row = progress[b.id] || {};
-                const status = shelfStatus(b, row);
-                const matches = row.matches ?? b.matches ?? [];
+                const status = statuses.get(b.id)!;
+                const matches = expanded === b.id ? reviewEditions(b, shelfEditions(b, row)) : [];
                 return (
                   <li key={b.id} className='py-1'>
                     <button
@@ -461,6 +472,16 @@ export default function BookDiscoveryDialog({ onClose, onClip }: Props) {
                         )}
                         {status !== 'added' && (
                           <>
+                            {['pending', 'missing', 'choose'].includes(status) && (
+                              <button
+                                type='button'
+                                className={button}
+                                disabled={running || busy}
+                                onClick={() => void start([b], true)}
+                              >
+                                {_('Find and import this book')}
+                              </button>
+                            )}
                             <button
                               type='button'
                               className={linkButton}
@@ -469,7 +490,7 @@ export default function BookDiscoveryDialog({ onClose, onClip }: Props) {
                                 void browse(
                                   row.selected?.url ||
                                     chooseEdition(b, matches)?.url ||
-                                    searchUrl(b.title),
+                                    searchUrl(workQueries(b)[0] || b.title),
                                 )
                               }
                             >

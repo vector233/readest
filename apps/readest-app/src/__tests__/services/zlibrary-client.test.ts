@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { beforeEach, expect, it, vi } from 'vitest';
-import { downloadEdition, searchCatalog } from '@/services/zlibrary/client';
+import { downloadEdition, searchCatalog, searchByTitle } from '@/services/zlibrary/client';
 import {
   CATALOG_ORIGIN,
   downloadLink,
@@ -22,6 +22,17 @@ const invoked = vi.mocked(invoke);
 
 beforeEach(() => {
   invoked.mockReset();
+});
+
+it('uses the core of a pasted annotated title, and propagates verification when a lookup is blocked', async () => {
+  const row =
+    '<z-bookcard href="/book/17/example" extension="epub"><span slot="title">Example</span><span slot="author">Writer</span></z-bookcard>';
+  invoked.mockResolvedValueOnce({ html: row });
+  expect(await searchByTitle('Example（2024）')).toEqual([book]);
+  expect(invoked).toHaveBeenCalledWith('read_catalog_page', { url: CATALOG_ORIGIN + '/s/Example' });
+  invoked.mockRejectedValueOnce('Catalog HTTP 403');
+  await expect(searchByTitle('Example（2024）')).rejects.toBe('Catalog HTTP 403');
+  expect(invoked).toHaveBeenCalledTimes(2);
 });
 
 it('downloads the link from the rendered book page in the same browser session', async () => {

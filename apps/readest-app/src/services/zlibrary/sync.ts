@@ -1,4 +1,11 @@
-import { chooseEdition, type CatalogBook, type ShelfBook } from './catalog';
+import {
+  chooseEdition,
+  mergeEditions,
+  reviewEditions,
+  type CatalogBook,
+  type ShelfBook,
+} from './catalog';
+import { identifyWork, workQueries } from './work';
 
 export interface ShelfProgress {
   hash?: string;
@@ -7,19 +14,40 @@ export interface ShelfProgress {
   manual?: boolean;
   browserChecked?: boolean;
   isbnChecked?: boolean;
+  /** Successful work-title queries. A failed or paused request remains eligible on resume. */
+  workSearches?: string[];
 }
 
 export type SyncProgress = Record<string, ShelfProgress>;
 export type ShelfStatus = 'added' | 'manual' | 'pending' | 'missing' | 'ready' | 'choose';
 
+export function shelfEditions(book: ShelfBook, progress: ShelfProgress): CatalogBook[] {
+  if (!progress.matches?.length) return book.matches || [];
+  if (!book.matches?.length) return progress.matches;
+  return mergeEditions(progress.matches, book.matches);
+}
+
+function remainingQueries(book: ShelfBook, row: ShelfProgress, refresh = false): string[] {
+  const done = new Set(refresh ? [] : row.workSearches);
+  // Older caches already contain the result of the literal title, including a genuine empty list.
+  if (!refresh && (book.matches || (row.matches && !row.workSearches))) done.add(book.title);
+  if ((book.isbnChecked || row.isbnChecked) && book.isbn && !refresh) done.add(book.isbn);
+  const queries = workQueries(book);
+  if (book.isbn) {
+    if (book.matches && identifyWork(book).name === book.title) queries.unshift(book.isbn);
+    else queries.push(book.isbn);
+  }
+  return [...new Set(queries)].filter((q) => !done.has(q));
+}
+
 export function shelfStatus(book: ShelfBook, progress: ShelfProgress = {}): ShelfStatus {
   if (progress.hash) return 'added';
   if (progress.manual && progress.browserChecked) return 'manual';
   if (progress.selected) return 'ready';
-  const matches = progress.matches ?? book.matches;
-  if (!matches) return 'pending';
-  if (!matches.length) return 'missing';
-  return chooseEdition(book, matches) ? 'ready' : 'choose';
+  const matches = shelfEditions(book, progress);
+  if (chooseEdition(book, matches)) return 'ready';
+  if (reviewEditions(book, matches).length) return 'choose';
+  return remainingQueries(book, progress).length ? 'pending' : 'missing';
 }
 
 interface SyncOptions {
@@ -31,6 +59,7 @@ interface SyncOptions {
   add: (book: CatalogBook) => Promise<string | undefined>;
   stopping: () => boolean;
   current: (book: ShelfBook) => void;
+  refresh?: boolean;
 }
 
 export async function syncShelf(books: ShelfBook[], options: SyncOptions) {
@@ -47,21 +76,23 @@ export async function syncShelf(books: ShelfBook[], options: SyncOptions) {
       options.save(book.id, row);
     }
     if (row.manual && row.browserChecked) continue;
-    let matches = row.matches ?? book.matches;
-    if (!matches && !row.selected) {
+    let matches = shelfEditions(book, row);
+    let choice = row.selected ?? chooseEdition(book, matches);
+    const queries = choice ? [] : remainingQueries(book, row, options.refresh);
+    for (const query of queries) {
+      if (choice || options.stopping()) break;
       options.current(book);
-      matches = await options.search(book.title);
-      row = { ...row, matches };
-      options.save(book.id, row);
-    }
-    let choice = row.selected ?? chooseEdition(book, matches ?? []);
-    if (!choice && book.isbn && !book.isbnChecked && !row.isbnChecked && !options.stopping()) {
-      options.current(book);
-      const editions = await options.search(book.isbn);
-      matches = [
-        ...new Map([...editions, ...(matches ?? [])].map((item) => [item.url, item])).values(),
-      ];
-      row = { ...row, isbnChecked: true, matches };
+      const editions = await options.search(query);
+      matches = reviewEditions(book, mergeEditions(editions, matches));
+      const done = new Set(row.workSearches);
+      if (!row.workSearches && (book.matches || row.matches)) done.add(book.title);
+      done.add(query);
+      row = {
+        ...row,
+        matches,
+        workSearches: [...done],
+        isbnChecked: query === book.isbn || row.isbnChecked,
+      };
       options.save(book.id, row);
       choice = chooseEdition(book, matches);
     }
