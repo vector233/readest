@@ -2313,6 +2313,12 @@ class NativeBridgePlugin(private val activity: Activity): Plugin(activity) {
         controller.show()
     }
 
+    @Command
+    fun read_catalog_page(invoke: Invoke) = CatalogBrowser.read(activity, invoke)
+
+    @Command
+    fun catalog_file_hop(invoke: Invoke) = CatalogBrowser.downloadHop(activity, invoke)
+
     /** Called only from Rust. The WebView owns cookie scoping, HttpOnly and persistence. */
     @Command
     fun web_browser_cookies(invoke: Invoke) {

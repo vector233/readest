@@ -68,6 +68,7 @@ fn main() {
             "open_web_browser",
             "fetch_web_browser_resource",
             "download_catalog_book",
+            "read_catalog_page",
             "get_media_proxy_base",
             "get_media_file_url",
             "set_web_browser_status",

@@ -18,7 +18,7 @@ pub struct BrowserResource {
 }
 
 // Accept only HTTP(S), also on every redirect. No credentials embedded in URLs.
-fn resource_url(value: &str) -> Result<Url, String> {
+pub(super) fn resource_url(value: &str) -> Result<Url, String> {
     let url = Url::parse(value).map_err(|_| "Invalid URL")?;
     if !matches!(url.scheme(), "http" | "https")
         || url.host_str().is_none()
@@ -326,6 +326,7 @@ where
 
 /// Stream one selected edition to the app cache, using the same origin-scoped
 /// browser cookies and redirect checks as catalog HTML. No file bytes cross IPC.
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 pub async fn download_catalog_book<R: tauri::Runtime>(
     webview: tauri::Webview<R>,
@@ -411,7 +412,7 @@ pub async fn download_catalog_book<R: tauri::Runtime>(
     result
 }
 
-fn book_signature_matches(format: &str, prefix: &[u8]) -> bool {
+pub(super) fn book_signature_matches(format: &str, prefix: &[u8]) -> bool {
     if prefix.is_empty() {
         return false;
     }

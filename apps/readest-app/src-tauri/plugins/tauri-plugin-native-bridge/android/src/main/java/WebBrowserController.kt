@@ -35,10 +35,8 @@ import android.widget.TextView
 import androidx.core.view.WindowInsetsControllerCompat
 import app.tauri.annotation.InvokeArg
 import java.io.File
-import java.io.FileOutputStream
 import java.io.IOException
 import java.lang.ref.WeakReference
-import java.net.HttpURLConnection
 import java.net.URL
 import org.json.JSONObject
 
@@ -408,10 +406,7 @@ class WebBrowserController(
 
     private fun configureWebView(act: Activity, wv: WebView) {
         val settings: WebSettings = wv.settings
-        settings.javaScriptEnabled = true
-        settings.domStorageEnabled = true
-        settings.databaseEnabled = true
-        settings.userAgentString = ClipUrlController.BROWSER_USER_AGENT
+        BrowserSession.configure(wv)
         settings.loadsImagesAutomatically = true
         settings.mediaPlaybackRequiresUserGesture = true
         settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
@@ -421,13 +416,6 @@ class WebBrowserController(
         settings.builtInZoomControls = true
         settings.displayZoomControls = false
         wv.setBackgroundColor(bg)
-
-        // The CookieManager is app-wide and persistent, so a sign-in here
-        // survives across browser sessions. Third-party cookies are required
-        // by most SSO redirects.
-        val cookies = CookieManager.getInstance()
-        cookies.setAcceptCookie(true)
-        cookies.setAcceptThirdPartyCookies(wv, true)
 
         wv.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
@@ -515,21 +503,28 @@ class WebBrowserController(
         dir.mkdirs()
         val dest = uniqueFile(dir, filename)
         setStatus("downloading", dest.name, null)
-        val cookie = CookieManager.getInstance().getCookie(url)
+        val agent = userAgent ?: webView?.settings?.userAgentString ?: BrowserSession.userAgent
+        val page = webView?.url?.takeIf { it.startsWith("https://") || it.startsWith("http://") }
         Thread {
             var error: String? = null
             try {
-                val conn = URL(url).openConnection() as HttpURLConnection
-                conn.instanceFollowRedirects = true
-                conn.connectTimeout = 15_000
-                conn.readTimeout = 60_000
-                if (!userAgent.isNullOrEmpty()) conn.setRequestProperty("User-Agent", userAgent)
-                if (!cookie.isNullOrEmpty()) conn.setRequestProperty("Cookie", cookie)
-                val code = conn.responseCode
-                if (code !in 200..299) throw IOException("HTTP $code")
-                conn.inputStream.use { input -> FileOutputStream(dest).use { output -> input.copyTo(output) } }
+                var target = URL(url)
+                var referer = page
+                for (hop in 0..10) {
+                    val response = BrowserSession.downloadHop(target, agent, referer, dest)
+                    if (response.status in 200..299) break
+                    if (response.status !in setOf(301, 302, 303, 307, 308) || response.location == null) {
+                        throw IOException("HTTP ${response.status}")
+                    }
+                    if (hop == 10) throw IOException("Too many redirects")
+                    val next = URL(target, response.location)
+                    if (next.protocol !in setOf("http", "https") || next.userInfo != null ||
+                        (target.protocol == "https" && next.protocol != "https")) throw IOException("Invalid redirect")
+                    if (!BrowserSession.sameOrigin(target, next)) referer = null
+                    target = next
+                }
             } catch (e: Exception) {
-                Log.w(TAG, "download failed: $url", e)
+                Log.w(TAG, "Browser download failed")
                 dest.delete()
                 error = e.message ?: "Download failed"
             }

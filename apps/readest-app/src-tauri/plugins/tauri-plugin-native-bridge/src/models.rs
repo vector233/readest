@@ -938,6 +938,29 @@ pub struct WebBrowserCookiesResponse {
     pub cookies: String,
 }
 
+#[cfg(target_os = "android")]
+#[derive(Serialize)]
+pub struct CatalogPageRequest {
+    pub url: String,
+}
+
+#[cfg(target_os = "android")]
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogFileRequest {
+    pub url: String,
+    pub path: String,
+    pub referer: Option<String>,
+    pub remaining_ms: u64,
+}
+
+#[cfg(target_os = "android")]
+#[derive(Deserialize)]
+pub struct CatalogFileResponse {
+    pub status: u16,
+    pub location: Option<String>,
+}
+
 /// Android: whether AnkiDroid is installed and Readest may use its provider (#789).
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]

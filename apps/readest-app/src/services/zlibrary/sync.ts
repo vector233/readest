@@ -5,6 +5,7 @@ export interface ShelfProgress {
   selected?: CatalogBook;
   matches?: CatalogBook[];
   manual?: boolean;
+  browserChecked?: boolean;
   isbnChecked?: boolean;
 }
 
@@ -13,7 +14,7 @@ export type ShelfStatus = 'added' | 'manual' | 'pending' | 'missing' | 'ready' |
 
 export function shelfStatus(book: ShelfBook, progress: ShelfProgress = {}): ShelfStatus {
   if (progress.hash) return 'added';
-  if (progress.manual) return 'manual';
+  if (progress.manual && progress.browserChecked) return 'manual';
   if (progress.selected) return 'ready';
   const matches = progress.matches ?? book.matches;
   if (!matches) return 'pending';
@@ -45,7 +46,7 @@ export async function syncShelf(books: ShelfBook[], options: SyncOptions) {
       row = { ...row, hash: undefined };
       options.save(book.id, row);
     }
-    if (row.manual) continue;
+    if (row.manual && row.browserChecked) continue;
     let matches = row.matches ?? book.matches;
     if (!matches && !row.selected) {
       options.current(book);
@@ -67,6 +68,6 @@ export async function syncShelf(books: ShelfBook[], options: SyncOptions) {
     if (!choice || options.stopping()) continue;
     options.current(book);
     const hash = await options.add(choice);
-    options.save(book.id, { ...row, selected: choice, hash, manual: !hash });
+    options.save(book.id, { ...row, selected: choice, hash, manual: !hash, browserChecked: true });
   }
 }

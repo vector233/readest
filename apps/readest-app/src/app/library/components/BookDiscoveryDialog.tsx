@@ -10,6 +10,7 @@ import { openWebBrowser, type WebBrowserPage } from '@/services/webBrowser/webBr
 import { getWebBrowserOptions } from '@/services/webBrowser/webBrowserOptions';
 import {
   CATALOG_ORIGIN,
+  chooseEdition,
   decodeShelf,
   decodeCatalogBooks,
   editionPreference,
@@ -58,6 +59,7 @@ export default function BookDiscoveryDialog({ onClose, onClip }: Props) {
   const [running, setRunning] = useState(false);
   const [current, setCurrent] = useState('');
   const [message, setMessage] = useState('');
+  const [failedPage, setFailedPage] = useState('');
   const [expanded, setExpanded] = useState('');
   const [filter, setFilter] = useState<'all' | ShelfStatus>('all');
   const active = useRef(false);
@@ -107,16 +109,24 @@ export default function BookDiscoveryDialog({ onClose, onClip }: Props) {
   };
 
   const showError = useCallback(
-    (error: unknown) => {
+    (error: unknown, book?: { title: string; url: string; stage: string }) => {
       if (!mounted.current) return;
       const text = String(error);
-      setMessage(
-        text.includes('429')
-          ? _('The site limit was reached. Resume later.')
-          : _(
-              'The book site could not complete this request. Open the site to check access, then retry.',
-            ),
-      );
+      const status = /Catalog HTTP (\d{3})\b/.exec(text)?.[1];
+      let reason = _('The request failed.');
+      if (status === '429') reason = _('The site limit was reached. Resume later.');
+      else if (status) reason = _('The site returned HTTP {{status}}.', { status });
+      else if (text.includes('Catalog access required'))
+        reason = _('The site requested verification or sign-in.');
+      else if (text.includes('timed out')) reason = _('The request timed out.');
+      else if (text.includes('Catalog returned a page') || text.includes('unexpected file'))
+        reason = _('The download did not return a book file.');
+      else if (text.includes('Catalog page not recognized'))
+        reason = _('Could not read the book page. Check the download on the site.');
+      else if (text.includes('network error') || text.includes('file transfer failed'))
+        reason = _('The connection to the book site failed.');
+      setFailedPage(book?.url || '');
+      setMessage(book ? [book.title, book.stage, reason].join(' · ') : reason);
     },
     [_],
   );
@@ -125,6 +135,7 @@ export default function BookDiscoveryDialog({ onClose, onClip }: Props) {
     if (busy || active.current) return;
     setBusy(true);
     setMessage('');
+    setFailedPage('');
     try {
       const outcome = await openWebBrowser(url, getWebBrowserOptions(_, !!appService?.isEink));
       if (outcome.openBookHash) {
@@ -145,6 +156,7 @@ export default function BookDiscoveryDialog({ onClose, onClip }: Props) {
     request.current = controller;
     setBusy(true);
     setMessage('');
+    setFailedPage('');
     if (mode === 'search') setResults(undefined);
     try {
       const books =
@@ -169,7 +181,9 @@ export default function BookDiscoveryDialog({ onClose, onClip }: Props) {
     stop.current = false;
     setRunning(true);
     setMessage('');
+    setFailedPage('');
     setCurrent('');
+    let context: { title: string; url: string; stage: string } | undefined;
     try {
       const ready = (book: ShelfBook) => shelfStatus(book, records.current[book.id]) === 'ready';
       // Import the verified editions first, even if later searches need the site to be unlocked.
@@ -186,11 +200,23 @@ export default function BookDiscoveryDialog({ onClose, onClip }: Props) {
                 (b.hash === hash || sameBook(book, b)) &&
                 (b.downloadedAt || b.filePath),
             )?.hash,
-        search: (query) => searchCatalog(query),
+        search: (query) => {
+          if (context) context.url = searchUrl(query);
+          return searchCatalog(query);
+        },
         add: async (edition) => {
-          const path = await downloadEdition(edition);
+          const entry = {
+            title: edition.title,
+            url: edition.url,
+            stage: _('Opening book details'),
+          };
+          context = entry;
+          const path = await downloadEdition(edition, () => {
+            entry.stage = _('Downloading book');
+          });
           if (!path) return;
           try {
+            entry.stage = _('Importing');
             const library = useLibraryStore.getState();
             const book = await appService.importBook(path, library.library);
             if (!book) throw new Error('Import failed');
@@ -205,6 +231,7 @@ export default function BookDiscoveryDialog({ onClose, onClip }: Props) {
         },
         stopping: () => stop.current,
         current: (book) => {
+          context = { title: book.title, url: searchUrl(book.title), stage: _('Search') };
           if (mounted.current) setCurrent(book.title);
         },
       });
@@ -215,7 +242,7 @@ export default function BookDiscoveryDialog({ onClose, onClip }: Props) {
             : _('Finished checking the shelf. Review any books that need an edition.'),
         );
     } catch (err) {
-      showError(err);
+      showError(err, context);
     } finally {
       active.current = false;
       if (mounted.current) {
@@ -279,6 +306,7 @@ export default function BookDiscoveryDialog({ onClose, onClip }: Props) {
               onClick={() => {
                 setTab(value);
                 setMessage('');
+                setFailedPage('');
                 if (value === 'popular' && !popular) void lookup('popular');
               }}
             >
@@ -382,10 +410,13 @@ export default function BookDiscoveryDialog({ onClose, onClip }: Props) {
           className={linkButton + ' self-start'}
           disabled={busy || running}
           onClick={() =>
-            void browse(tab === 'search' && query.trim() ? searchUrl(query) : CATALOG_ORIGIN + '/')
+            void browse(
+              failedPage ||
+                (tab === 'search' && query.trim() ? searchUrl(query) : CATALOG_ORIGIN + '/'),
+            )
           }
         >
-          {_('Open Z-Library')}
+          {failedPage ? _('View on Z-Library') : _('Open Z-Library')}
         </button>
         {tab !== 'shelf' &&
           catalogList &&
@@ -434,7 +465,13 @@ export default function BookDiscoveryDialog({ onClose, onClip }: Props) {
                               type='button'
                               className={linkButton}
                               disabled={running || busy}
-                              onClick={() => void browse(row.selected?.url || searchUrl(b.title))}
+                              onClick={() =>
+                                void browse(
+                                  row.selected?.url ||
+                                    chooseEdition(b, matches)?.url ||
+                                    searchUrl(b.title),
+                                )
+                              }
                             >
                               {_('View on Z-Library')}
                             </button>

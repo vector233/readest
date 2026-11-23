@@ -36,6 +36,8 @@ mod backup_zip;
 #[cfg(target_os = "macos")]
 mod browser_cookies_macos;
 mod browser_fetch;
+#[cfg(target_os = "android")]
+mod catalog_android;
 #[cfg(all(target_os = "linux", any(feature = "cef", test)))]
 mod cef_local_network;
 mod clip_url;
@@ -718,7 +720,12 @@ pub fn run() {
             clip_url::clip_url,
             web_browser::open_web_browser,
             browser_fetch::fetch_web_browser_resource,
+            #[cfg(not(target_os = "android"))]
             browser_fetch::download_catalog_book,
+            #[cfg(target_os = "android")]
+            catalog_android::download_catalog_book,
+            #[cfg(target_os = "android")]
+            catalog_android::read_catalog_page,
             media_proxy::get_media_proxy_base,
             media_proxy::get_media_file_url,
             web_browser::set_web_browser_status,

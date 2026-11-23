@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import { browserFetch } from '@/services/webBrowser/browserFetch';
+import type { WebBrowserPage } from '@/services/webBrowser/webBrowser';
 import {
   CATALOG_ORIGIN,
   catalogLink,
@@ -10,37 +10,34 @@ import {
   type CatalogBook,
 } from './catalog';
 
-async function catalogPage(url: string, signal?: AbortSignal): Promise<string> {
-  const response = await browserFetch(url, {
-    signal,
-    headers: {
-      'User-Agent': navigator.userAgent,
-      Accept: 'text/html',
-      'Accept-Language': 'zh-CN,zh;q=0.9',
-    },
-  });
-  if (!response.ok || new URL(response.url).origin !== CATALOG_ORIGIN) {
-    throw new Error('Catalog HTTP ' + response.status);
-  }
-  return response.text();
+async function catalogPage(url: string, signal?: AbortSignal): Promise<WebBrowserPage> {
+  signal?.throwIfAborted();
+  const page = await invoke<WebBrowserPage>('read_catalog_page', { url });
+  signal?.throwIfAborted();
+  return page;
 }
 
 export async function searchCatalog(query: string, signal?: AbortSignal) {
-  return parseCatalog(await catalogPage(searchUrl(query), signal));
+  return parseCatalog((await catalogPage(searchUrl(query), signal)).html);
 }
 
 export async function popularCatalog(signal?: AbortSignal) {
-  return parsePopular(await catalogPage(CATALOG_ORIGIN + '/', signal));
+  return parsePopular((await catalogPage(CATALOG_ORIGIN + '/', signal)).html);
 }
 
-export async function downloadEdition(book: CatalogBook): Promise<string | null> {
+export async function downloadEdition(
+  book: CatalogBook,
+  onDownload?: () => void,
+): Promise<string | null> {
   const url = catalogLink(book.url, '/book/');
   if (!url) return null;
-  const link = downloadLink(await catalogPage(url));
+  const page = await catalogPage(url);
+  const link = downloadLink(page.html);
   if (!link) return null;
+  onDownload?.();
   return invoke<string | null>('download_catalog_book', {
     url: link,
     format: book.format,
-    userAgent: navigator.userAgent,
+    referer: page.url,
   });
 }

@@ -546,6 +546,23 @@ impl<R: Runtime> NativeBridge<R> {
             .map_err(Into::into)
     }
 
+    #[cfg(target_os = "android")]
+    pub fn read_catalog_page(&self, payload: CatalogPageRequest) -> crate::Result<WebBrowserPage> {
+        self.0
+            .run_mobile_plugin("read_catalog_page", payload)
+            .map_err(Into::into)
+    }
+
+    #[cfg(target_os = "android")]
+    pub fn catalog_file_hop(
+        &self,
+        payload: CatalogFileRequest,
+    ) -> crate::Result<CatalogFileResponse> {
+        self.0
+            .run_mobile_plugin("catalog_file_hop", payload)
+            .map_err(Into::into)
+    }
+
     /// Push an import status into the open browser's banner.
     pub fn set_web_browser_status(&self, payload: WebBrowserStatusRequest) -> crate::Result<()> {
         self.0

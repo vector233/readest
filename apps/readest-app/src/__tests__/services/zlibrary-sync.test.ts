@@ -16,6 +16,27 @@ const first: ShelfBook = {
 };
 const second: ShelfBook = { ...first, id: 'b', title: 'Another', matches: undefined };
 
+it('rechecks an unavailable edition from the old downloader once in the browser', async () => {
+  const progress: SyncProgress = { a: { selected: edition, manual: true } };
+  const add = vi.fn().mockResolvedValue(undefined);
+  const actions = {
+    read: (id: string) => progress[id],
+    save: (id: string, row: SyncProgress[string]) => {
+      progress[id] = row;
+    },
+    existing: () => undefined,
+    search: vi.fn(),
+    add,
+    current: vi.fn(),
+    stopping: () => false,
+  };
+  expect(shelfStatus(first, progress['a'])).toBe('ready');
+  await syncShelf([first], actions);
+  expect(shelfStatus(first, progress['a'])).toBe('manual');
+  await syncShelf([first], actions);
+  expect(add).toHaveBeenCalledTimes(1);
+});
+
 it('records a completed import once, resumes after failure, and leaves empty searches distinct', async () => {
   const progress: SyncProgress = {};
   const existingHashes = new Set<string>();
