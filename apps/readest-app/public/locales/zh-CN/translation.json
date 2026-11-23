@@ -2837,5 +2837,8 @@
   "View on Z-Library": "去书站查看",
   "Select an edition to import": "选择要导入的版本",
   "Find and import this book": "重新匹配并导入",
+  "Needs matching": "待匹配",
+  "Match these books": "批量匹配",
+  "Finished matching. Confirmed books are ready to import.": "匹配完成。已确认版本的书可在「可导入」中查看。",
   "Read now": "开始阅读"
 }

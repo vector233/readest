@@ -30,6 +30,7 @@ import { workQueries } from '@/services/zlibrary/work';
 import {
   shelfStatus,
   shelfEditions,
+  needsMatch,
   syncShelf,
   type ShelfProgress,
   type ShelfStatus,
@@ -69,7 +70,7 @@ export default function BookDiscoveryDialog({ onClose, onClip }: Props) {
   const [message, setMessage] = useState('');
   const [failedPage, setFailedPage] = useState('');
   const [expanded, setExpanded] = useState('');
-  const [filter, setFilter] = useState<'all' | ShelfStatus>('all');
+  const [filter, setFilter] = useState<'all' | 'unresolved' | ShelfStatus>('all');
   const active = useRef(false);
   const stop = useRef(false);
   const mounted = useRef(true);
@@ -183,7 +184,7 @@ export default function BookDiscoveryDialog({ onClose, onClip }: Props) {
     }
   };
 
-  const start = async (books: ShelfBook[], refresh = false) => {
+  const start = async (books: ShelfBook[], { refresh = false, matchOnly = false } = {}) => {
     if (!appService || busy || active.current) return;
     active.current = true;
     stop.current = false;
@@ -198,6 +199,7 @@ export default function BookDiscoveryDialog({ onClose, onClip }: Props) {
       const ordered = [...books.filter(ready), ...books.filter((b) => !ready(b))];
       await syncShelf(ordered, {
         refresh,
+        matchOnly,
         read: (id) => records.current[id],
         save,
         existing: (book, hash) =>
@@ -248,7 +250,9 @@ export default function BookDiscoveryDialog({ onClose, onClip }: Props) {
         setMessage(
           stop.current
             ? _('Sync paused. Your progress is saved.')
-            : _('Finished checking the shelf. Review any books that need an edition.'),
+            : matchOnly
+              ? _('Finished matching. Confirmed books are ready to import.')
+              : _('Finished checking the shelf. Review any books that need an edition.'),
         );
     } catch (err) {
       showError(err, context);
@@ -277,6 +281,11 @@ export default function BookDiscoveryDialog({ onClose, onClip }: Props) {
     }
     return { counts, statuses };
   }, [shelf, progress]);
+  const matchingFilter = filter === 'unresolved' || (filter !== 'all' && needsMatch(filter));
+  const visibleBooks = shelf.filter((b) => {
+    const status = statuses.get(b.id)!;
+    return filter === 'all' || (filter === 'unresolved' ? needsMatch(status) : status === filter);
+  });
   const catalogList = tab === 'search' ? results : popular;
   const remoteList = (items: CatalogBook[], select?: (book: CatalogBook) => void) => (
     <ul className='divide-base-200 divide-y'>
@@ -345,23 +354,36 @@ export default function BookDiscoveryDialog({ onClose, onClip }: Props) {
                   <button
                     type='button'
                     className={button + ' btn-primary'}
-                    disabled={busy}
+                    disabled={busy || (!running && visibleBooks.length === 0)}
                     onClick={() => {
                       if (active.current) {
                         stop.current = true;
                         setMessage(_('Finishing the current book…'));
-                      } else void start(shelf);
+                      } else
+                        void start(visibleBooks, {
+                          matchOnly: matchingFilter,
+                          refresh: filter === 'missing',
+                        });
                     }}
                   >
-                    {running ? _('Pause sync') : _('One-tap sync')}
+                    {running
+                      ? _('Pause sync')
+                      : matchingFilter
+                        ? _('Match these books')
+                        : _('One-tap sync')}
                   </button>
                   <select
                     aria-label={_('Sync status')}
                     className='select select-bordered select-sm min-h-10 w-auto'
                     value={filter}
+                    disabled={running}
                     onChange={(e) => setFilter(e.target.value as typeof filter)}
                   >
                     <option value='all'>{_('All books')}</option>
+                    <option value='unresolved'>
+                      {_('Needs matching')} (
+                      {(counts.pending || 0) + (counts.missing || 0) + (counts.choose || 0)})
+                    </option>
                     {Object.entries(labels).map(([key, label]) => (
                       <option key={key} value={key}>
                         {label} ({counts[key as ShelfStatus] || 0})
@@ -434,88 +456,84 @@ export default function BookDiscoveryDialog({ onClose, onClip }: Props) {
           (catalogList.length ? remoteList(catalogList) : <p>{_('No matches')}</p>)}
         {tab === 'shelf' && (
           <ul className='divide-base-200 divide-y'>
-            {shelf
-              .filter((b) => filter === 'all' || statuses.get(b.id) === filter)
-              .map((b) => {
-                const row = progress[b.id] || {};
-                const status = statuses.get(b.id)!;
-                const matches = expanded === b.id ? reviewEditions(b, shelfEditions(b, row)) : [];
-                return (
-                  <li key={b.id} className='py-1'>
-                    <button
-                      type='button'
-                      aria-expanded={expanded === b.id}
-                      onClick={() => setExpanded(expanded === b.id ? '' : b.id)}
-                      className='flex w-full items-center justify-between gap-3 py-2 text-start'
-                    >
-                      <span className='min-w-0'>
-                        <span className='block font-medium'>{b.title}</span>
-                        <span className='text-base-content/65 text-sm'>{b.author}</span>
-                      </span>
-                      <span className='text-base-content/65 shrink-0 text-xs'>
-                        {labels[status]}
-                      </span>
-                    </button>
-                    {expanded === b.id && (
-                      <div className='border-base-300 border-s-2 ps-2'>
-                        {status === 'added' && row.hash && (
+            {visibleBooks.map((b) => {
+              const row = progress[b.id] || {};
+              const status = statuses.get(b.id)!;
+              const matches = expanded === b.id ? reviewEditions(b, shelfEditions(b, row)) : [];
+              return (
+                <li key={b.id} className='py-1'>
+                  <button
+                    type='button'
+                    aria-expanded={expanded === b.id}
+                    onClick={() => setExpanded(expanded === b.id ? '' : b.id)}
+                    className='flex w-full items-center justify-between gap-3 py-2 text-start'
+                  >
+                    <span className='min-w-0'>
+                      <span className='block font-medium'>{b.title}</span>
+                      <span className='text-base-content/65 text-sm'>{b.author}</span>
+                    </span>
+                    <span className='text-base-content/65 shrink-0 text-xs'>{labels[status]}</span>
+                  </button>
+                  {expanded === b.id && (
+                    <div className='border-base-300 border-s-2 ps-2'>
+                      {status === 'added' && row.hash && (
+                        <button
+                          type='button'
+                          className={linkButton}
+                          onClick={() => {
+                            onClose();
+                            navigateToReader(router, [row.hash!]);
+                          }}
+                        >
+                          {_('Read now')}
+                        </button>
+                      )}
+                      {status !== 'added' && (
+                        <>
+                          {needsMatch(status) && (
+                            <button
+                              type='button'
+                              className={button}
+                              disabled={running || busy}
+                              onClick={() => void start([b], { refresh: true })}
+                            >
+                              {_('Find and import this book')}
+                            </button>
+                          )}
                           <button
                             type='button'
                             className={linkButton}
-                            onClick={() => {
-                              onClose();
-                              navigateToReader(router, [row.hash!]);
-                            }}
+                            disabled={running || busy}
+                            onClick={() =>
+                              void browse(
+                                row.selected?.url ||
+                                  chooseEdition(b, matches)?.url ||
+                                  searchUrl(workQueries(b)[0] || b.title),
+                              )
+                            }
                           >
-                            {_('Read now')}
+                            {_('View on Z-Library')}
                           </button>
-                        )}
-                        {status !== 'added' && (
-                          <>
-                            {['pending', 'missing', 'choose'].includes(status) && (
-                              <button
-                                type='button'
-                                className={button}
-                                disabled={running || busy}
-                                onClick={() => void start([b], true)}
-                              >
-                                {_('Find and import this book')}
-                              </button>
-                            )}
-                            <button
-                              type='button'
-                              className={linkButton}
-                              disabled={running || busy}
-                              onClick={() =>
-                                void browse(
-                                  row.selected?.url ||
-                                    chooseEdition(b, matches)?.url ||
-                                    searchUrl(workQueries(b)[0] || b.title),
-                                )
-                              }
-                            >
-                              {_('View on Z-Library')}
-                            </button>
-                            {matches.length > 0 && (
-                              <>
-                                <p className='text-sm'>{_('Select an edition to import')}</p>
-                                {remoteList(matches, (choice) => {
-                                  if (!editionPreference.includes(choice.format)) {
-                                    void browse(choice.url);
-                                    return;
-                                  }
-                                  save(b.id, { ...row, selected: choice, manual: false });
-                                  void start([b]);
-                                })}
-                              </>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    )}
-                  </li>
-                );
-              })}
+                          {matches.length > 0 && (
+                            <>
+                              <p className='text-sm'>{_('Select an edition to import')}</p>
+                              {remoteList(matches, (choice) => {
+                                if (!editionPreference.includes(choice.format)) {
+                                  void browse(choice.url);
+                                  return;
+                                }
+                                save(b.id, { ...row, selected: choice, manual: false });
+                                void start([b]);
+                              })}
+                            </>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>

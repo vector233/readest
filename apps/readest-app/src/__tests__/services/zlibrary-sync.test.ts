@@ -200,3 +200,31 @@ it('stops between alternate searches without caching an unfinished or permanentl
   expect(search.mock.calls).toEqual([['Example Writer'], ['Example']]);
   expect(add).not.toHaveBeenCalled();
 });
+
+it('matches the entire selection without downloading and imports the confirmed edition afterwards', async () => {
+  const wanted: ShelfBook = { ...first, title: 'Example（2024）', matches: [] };
+  const upper: ShelfBook = { ...second, title: '云港（上册）', matches: [] };
+  const lower = { ...edition, title: '云港（下册）', url: edition.url + '/lower' };
+  const state: SyncProgress = {};
+  const search = vi.fn(async (q: string) => (q === 'Example Writer' ? [edition] : [lower]));
+  const add = vi.fn().mockResolvedValue('stored');
+  const options = {
+    read: (id: string) => state[id],
+    save: (id: string, row: SyncProgress[string]) => {
+      state[id] = row;
+    },
+    existing: () => undefined,
+    search,
+    add,
+    stopping: () => false,
+    current: vi.fn(),
+  };
+  await syncShelf([wanted, upper], { ...options, matchOnly: true });
+  expect(add).not.toHaveBeenCalled();
+  expect(shelfStatus(wanted, state[wanted.id])).toBe('ready');
+  expect(shelfStatus(upper, state[upper.id])).toBe('choose');
+  search.mockClear();
+  await syncShelf([wanted], options);
+  expect(search).not.toHaveBeenCalled();
+  expect(add.mock.calls).toEqual([[edition]]);
+});

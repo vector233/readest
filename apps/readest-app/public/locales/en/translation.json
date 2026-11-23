@@ -181,6 +181,9 @@
   "View on Z-Library": "View on Z-Library",
   "Select an edition to import": "Select an edition to import",
   "Find and import this book": "Find and import this book",
+  "Needs matching": "Needs matching",
+  "Match these books": "Match these books",
+  "Finished matching. Confirmed books are ready to import.": "Finished matching. Confirmed books are ready to import.",
   "Read now": "Read now",
   "Loading…": "Loading…"
 }

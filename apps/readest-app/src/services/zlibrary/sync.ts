@@ -21,6 +21,10 @@ export interface ShelfProgress {
 export type SyncProgress = Record<string, ShelfProgress>;
 export type ShelfStatus = 'added' | 'manual' | 'pending' | 'missing' | 'ready' | 'choose';
 
+export function needsMatch(status: ShelfStatus): boolean {
+  return status === 'pending' || status === 'missing' || status === 'choose';
+}
+
 export function shelfEditions(book: ShelfBook, progress: ShelfProgress): CatalogBook[] {
   if (!progress.matches?.length) return book.matches || [];
   if (!book.matches?.length) return progress.matches;
@@ -60,6 +64,7 @@ interface SyncOptions {
   stopping: () => boolean;
   current: (book: ShelfBook) => void;
   refresh?: boolean;
+  matchOnly?: boolean;
 }
 
 export async function syncShelf(books: ShelfBook[], options: SyncOptions) {
@@ -79,13 +84,17 @@ export async function syncShelf(books: ShelfBook[], options: SyncOptions) {
     let matches = shelfEditions(book, row);
     let choice = row.selected ?? chooseEdition(book, matches);
     const queries = choice ? [] : remainingQueries(book, row, options.refresh);
+    if (queries.length && options.refresh) {
+      row = { ...row, workSearches: [], isbnChecked: false };
+      options.save(book.id, row);
+    }
+    const done = new Set(row.workSearches);
+    if (!row.workSearches && (book.matches || row.matches)) done.add(book.title);
     for (const query of queries) {
       if (choice || options.stopping()) break;
       options.current(book);
       const editions = await options.search(query);
       matches = reviewEditions(book, mergeEditions(editions, matches));
-      const done = new Set(row.workSearches);
-      if (!row.workSearches && (book.matches || row.matches)) done.add(book.title);
       done.add(query);
       row = {
         ...row,
@@ -96,7 +105,7 @@ export async function syncShelf(books: ShelfBook[], options: SyncOptions) {
       options.save(book.id, row);
       choice = chooseEdition(book, matches);
     }
-    if (!choice || options.stopping()) continue;
+    if (options.matchOnly || !choice || options.stopping()) continue;
     options.current(book);
     const hash = await options.add(choice);
     options.save(book.id, { ...row, selected: choice, hash, manual: !hash, browserChecked: true });
