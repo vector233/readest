@@ -9,6 +9,7 @@ permissions: read-all
 
 jobs:
   get-release:
+    if: github.event_name != 'release' || github.event.release.tag_name != 'android-personal'
     permissions:
       contents: read
     runs-on: ubuntu-latest
@@ -724,7 +725,7 @@ jobs:
   # desktop legs that also rewrite latest.json) never race on the asset.
   update-android-latest-json:
     needs: [get-release, build-tauri]
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && needs.get-release.result == 'success' }}
     permissions:
       contents: write
     runs-on: ubuntu-latest
