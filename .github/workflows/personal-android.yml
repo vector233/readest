@@ -15,6 +15,8 @@ jobs:
     env:
       NEXT_PUBLIC_APP_PLATFORM: tauri
       NEXT_PUBLIC_DISABLE_UPDATER: "1"
+      NEXT_PUBLIC_PERSONAL_ANDROID_UPDATE: "1"
+      READEST_PERSONAL_BUILD: ${{ github.run_number }}
       CARGO_PROFILE_RELEASE_DEBUG: "0"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1

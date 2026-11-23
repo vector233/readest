@@ -27,7 +27,7 @@ export const setAboutDialogVisible = (visible: boolean) => {
 
 type UpdateStatus = 'checking' | 'updating' | 'updated' | 'error';
 
-export const AboutWindow = () => {
+export const AboutWindow = ({ onAppUpdate }: { onAppUpdate?: () => void }) => {
   const _ = useTranslation();
   const { appService } = useEnv();
   const { settings } = useSettingsStore();
@@ -75,6 +75,11 @@ export const AboutWindow = () => {
   }, []);
 
   const handleCheckUpdate = async () => {
+    if (onAppUpdate) {
+      handleClose();
+      onAppUpdate();
+      return;
+    }
     setUpdateStatus('checking');
     try {
       const hasUpdate = await checkForAppUpdates(_, false, settings.updateChannel);
@@ -148,7 +153,11 @@ export const AboutWindow = () => {
               {!updateStatus && (
                 <button
                   className='btn btn-sm btn-primary cursor-pointer p-1 text-xs'
-                  onClick={appService?.hasUpdater ? handleCheckUpdate : handleShowRecentUpdates}
+                  onClick={
+                    onAppUpdate || appService?.hasUpdater
+                      ? handleCheckUpdate
+                      : handleShowRecentUpdates
+                  }
                 >
                   {_('Check Update')}
                 </button>

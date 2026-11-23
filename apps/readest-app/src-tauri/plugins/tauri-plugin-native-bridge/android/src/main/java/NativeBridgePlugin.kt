@@ -303,6 +303,7 @@ class NativeBridgePlugin(private val activity: Activity): Plugin(activity) {
     // Cancelled in onDestroy so in-flight work can't resolve into — or leak —
     // a dead Activity.
     private val pluginScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private val personalUpdater = PersonalUpdater(activity)
     private var pageCoverToken = 0
     private val pageCovers = mutableMapOf<Int, Pair<PopupWindow, Bitmap>>()
 
@@ -2315,6 +2316,16 @@ class NativeBridgePlugin(private val activity: Activity): Plugin(activity) {
 
     @Command
     fun read_catalog_page(invoke: Invoke) = CatalogBrowser.read(activity, invoke)
+
+    @Command
+    fun check_personal_update(invoke: Invoke) {
+        pluginScope.launch { personalUpdater.check(invoke) }
+    }
+
+    @Command
+    fun install_personal_update(invoke: Invoke) {
+        pluginScope.launch { personalUpdater.install(invoke) }
+    }
 
     @Command
     fun catalog_file_hop(invoke: Invoke) = CatalogBrowser.downloadHop(activity, invoke)

@@ -41,6 +41,7 @@ interface LibraryHeaderProps {
   onImportFromWebBrowser?: () => void;
   onImportBookFromNovelUrl?: () => void;
   onOpenDiscovery?: () => void;
+  onAppUpdate?: () => void;
   onOpenCatalogManager: () => void;
   onOpenFeeds: () => void;
   onToggleSelectMode: () => void;
@@ -65,6 +66,7 @@ const LibraryHeader: React.FC<LibraryHeaderProps> = ({
   onImportFromWebBrowser,
   onImportBookFromNovelUrl,
   onOpenDiscovery,
+  onAppUpdate,
   onOpenCatalogManager,
   onOpenFeeds,
   onToggleSelectMode,
@@ -446,7 +448,7 @@ const LibraryHeader: React.FC<LibraryHeaderProps> = ({
               buttonClassName='btn btn-ghost h-8 min-h-8 w-8 p-0'
               toggleButton={<MdOutlineMenu role='none' size={iconSize18} />}
             >
-              <SettingsMenu onPullLibrary={onPullLibrary} />
+              <SettingsMenu onPullLibrary={onPullLibrary} onAppUpdate={onAppUpdate} />
             </Dropdown>
             {appService?.hasWindowBar && (
               <WindowButtons

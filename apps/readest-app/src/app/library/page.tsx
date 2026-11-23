@@ -97,6 +97,7 @@ import {
 import { LibraryGroupByType } from '@/types/settings';
 import { BookMetadata } from '@/libs/document';
 import { AboutWindow } from '@/components/AboutWindow';
+import PersonalUpdateDialog from './components/PersonalUpdateDialog';
 import ReadingStatsDialog from '@/components/stats/ReadingStatsDialog';
 import { VocabularyDialog } from '@/components/vocabulary/VocabularyDialog';
 import { KeyboardShortcutsHelp } from '@/components/KeyboardShortcutsHelp';
@@ -277,6 +278,11 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
   const [showFeeds, setShowFeeds] = useState(false);
   const [showAddFeed, setShowAddFeed] = useState(false);
   const [showDiscovery, setShowDiscovery] = useState(false);
+  const [showPersonalUpdate, setShowPersonalUpdate] = useState(false);
+  const openPersonalUpdate =
+    appService?.isAndroidApp && process.env['NEXT_PUBLIC_PERSONAL_ANDROID_UPDATE']
+      ? () => setShowPersonalUpdate(true)
+      : undefined;
   const [showWebSources, setShowWebSources] = useState(false);
   const [showImportNovel, setShowImportNovel] = useState(false);
   const [showImportPastedText, setShowImportPastedText] = useState(false);
@@ -2009,6 +2015,7 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
             isTauriAppPlatform() ? () => setShowImportNovel(true) : undefined
           }
           onOpenDiscovery={appService?.isAndroidApp ? () => setShowDiscovery(true) : undefined}
+          onAppUpdate={openPersonalUpdate}
           onOpenCatalogManager={handleShowOPDSDialog}
           onOpenFeeds={handleShowFeeds}
           onToggleSelectMode={() => handleSetSelectMode(!isSelectMode)}
@@ -2178,7 +2185,8 @@ const LibraryPageContent = ({ searchParams }: { searchParams: ReadonlyURLSearchP
           <TransferQueuePanel />
         </ModalPortal>
       )}
-      <AboutWindow />
+      <AboutWindow onAppUpdate={openPersonalUpdate} />
+      {showPersonalUpdate && <PersonalUpdateDialog onClose={() => setShowPersonalUpdate(false)} />}
       <ReadingStatsDialog />
       <VocabularyDialog />
       <KeyboardShortcutsHelp />

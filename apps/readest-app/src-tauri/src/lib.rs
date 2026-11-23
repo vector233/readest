@@ -726,6 +726,10 @@ pub fn run() {
             catalog_android::download_catalog_book,
             #[cfg(target_os = "android")]
             catalog_android::read_catalog_page,
+            #[cfg(target_os = "android")]
+            android::personal_update::check_personal_update,
+            #[cfg(target_os = "android")]
+            android::personal_update::install_personal_update,
             media_proxy::get_media_proxy_base,
             media_proxy::get_media_file_url,
             web_browser::set_web_browser_status,

@@ -1,4 +1,12 @@
 {
+  "App update": "App update",
+  "Download and install": "Download and install",
+  "Continue installation": "Continue installation",
+  "Allow installs from this app in Android settings, then return to continue.": "Allow installs from this app in Android settings, then return to continue.",
+  "Confirm the update in the Android installer.": "Confirm the update in the Android installer.",
+  "Could not download the update or open the Android installer. Try again.": "Could not download the update or open the Android installer. Try again.",
+  "The update package could not be verified.": "The update package could not be verified.",
+  "Downloading update · {{percent}}%": "Downloading update · {{percent}}%",
   "On hold": "On hold",
   "Mark as On hold": "Mark as On hold",
   "LXGW WenKai GB Screen": "LXGW WenKai SC",

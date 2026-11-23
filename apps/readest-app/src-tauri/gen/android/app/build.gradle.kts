@@ -51,8 +51,10 @@ android {
         resValue("string", "personal_app_name", "Readest 个人版")
         minSdk = 26
         targetSdk = 36
-        versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt() + 2
-        versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0") + "-personal.2"
+        // Actions assigns a new run number for each build of the personal channel.
+        val personalRevision = 2 + (System.getenv("READEST_PERSONAL_BUILD")?.toInt() ?: 1)
+        versionCode = 12020 + personalRevision
+        versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0.0") + "-personal.$personalRevision"
         val storeFlavor = project.findProperty("storeFlavor")?.toString() ?: "foss"
         missingDimensionStrategy("store", storeFlavor)
         // Handwriting (issue #3673): -PpenFlavor=booxPen links the BOOX Pen SDK

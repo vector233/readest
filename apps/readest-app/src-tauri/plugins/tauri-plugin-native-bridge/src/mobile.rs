@@ -563,6 +563,36 @@ impl<R: Runtime> NativeBridge<R> {
             .map_err(Into::into)
     }
 
+    #[cfg(target_os = "android")]
+    pub fn check_personal_update(&self) -> crate::Result<serde_json::Value> {
+        self.0
+            .run_mobile_plugin("check_personal_update", ())
+            .map_err(Into::into)
+    }
+
+    #[cfg(target_os = "android")]
+    pub fn install_personal_update(
+        &self,
+        version_code: u32,
+        on_progress: tauri::ipc::Channel<u8>,
+    ) -> crate::Result<String> {
+        #[derive(serde::Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct UpdateArgs {
+            version_code: u32,
+            on_progress: tauri::ipc::Channel<u8>,
+        }
+        self.0
+            .run_mobile_plugin(
+                "install_personal_update",
+                UpdateArgs {
+                    version_code,
+                    on_progress,
+                },
+            )
+            .map_err(Into::into)
+    }
+
     /// Push an import status into the open browser's banner.
     pub fn set_web_browser_status(&self, payload: WebBrowserStatusRequest) -> crate::Result<()> {
         self.0

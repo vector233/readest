@@ -251,6 +251,8 @@
     "allow-fetch-web-browser-resource",
     "allow-download-catalog-book",
     "allow-read-catalog-page",
+    "allow-check-personal-update",
+    "allow-install-personal-update",
     "allow-get-media-proxy-base",
     "allow-get-media-file-url",
     "allow-set-web-browser-status",
